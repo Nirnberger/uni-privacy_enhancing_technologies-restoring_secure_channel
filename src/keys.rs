@@ -27,6 +27,69 @@ impl KeyPair {
             public_key: pk,
         }
     }
+
+    /// Reads a private key and reconstructs the `KeyPair`
+    pub fn from_file(sk_filepath: &str) -> io::Result<KeyPair> {
+        let mut sk_file = File::open(sk_filepath)?;
+        let mut sk_bytes = [0u8; 32];
+        sk_file.read_exact(&mut sk_bytes)?;
+        let private_key = Scalar::from_bytes_mod_order(sk_bytes);
+
+        let public_key = private_key * RISTRETTO_BASEPOINT_POINT;
+
+        Ok(KeyPair {
+            private_key,
+            public_key,
+        })
+    }
+
+    /// Reads only the public key from a file
+    pub fn pk_from_file(pk_filepath: &str) -> io::Result<RistrettoPoint> {
+        let mut pk_file = File::open(pk_filepath)?;
+        let mut pk_bytes = [0u8; 32];
+        pk_file.read_exact(&mut pk_bytes)?;
+        let compressed = CompressedRistretto(pk_bytes);
+        compressed.decompress().ok_or(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Failed to decompress public key",
+        ))
+    }
+
+    /// Writes the private key to a file
+    pub fn write_sk_to_file(&self, filepath: &str) -> io::Result<()> {
+        let mut file = File::create(filepath)?;
+        let sk_bytes = self.private_key.to_bytes();
+        file.write_all(&sk_bytes)?;
+        Ok(())
+    }
+
+    /// Writes the public key to a file
+    pub fn write_pk_to_file(&self, filepath: &str) -> io::Result<()> {
+        let mut file = File::create(filepath)?;
+        let pk_bytes = self.public_key.compress().to_bytes();
+        file.write_all(&pk_bytes)?;
+        Ok(())
+    }
+
+    /// Reads the private key from a file
+    pub fn read_sk_from_file(filepath: &str) -> io::Result<Scalar> {
+        let mut file = File::open(filepath)?;
+        let mut sk_bytes = [0u8; 32];
+        file.read_exact(&mut sk_bytes)?;
+        Ok(Scalar::from_bytes_mod_order(sk_bytes))
+    }
+
+    /// Reads the public key from a file
+    pub fn read_pk_from_file(filepath: &str) -> io::Result<RistrettoPoint> {
+        let mut file = File::open(filepath)?;
+        let mut pk_bytes = [0u8; 32];
+        file.read_exact(&mut pk_bytes)?;
+        let compressed = CompressedRistretto(pk_bytes);
+        compressed.decompress().ok_or(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Failed to decompress public key",
+        ))
+    }
 }
 
 // Unit tests for keys module

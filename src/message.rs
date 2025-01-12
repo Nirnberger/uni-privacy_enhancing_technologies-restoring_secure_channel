@@ -1,8 +1,9 @@
 use crate::hybrid_enc::HybridCiphertext;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use crate::keys::KeyPair;
+use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use crate::schnorr::SchnorrSignature;
 use crate::serializers::*;
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -44,6 +45,13 @@ impl Message {
         recipient: CompressedRistretto,
         signature: SchnorrSignature,
     ) -> Self {
+        Message {
+            version,
+            payload,
+            sender: sender.to_bytes(),
+            recipient: recipient.to_bytes(),
+            signature,
+        }
     }
 
     /// Writes the message to a JSON file
@@ -54,15 +62,64 @@ impl Message {
     }
 
     /// Encrypts the whole message using hybrid encryption
-    pub fn encrypt(&mut self, elgamal_public_key: &RistrettoPoint) -> Result<(), String> {}
+    pub fn encrypt(&mut self, elgamal_public_key: &RistrettoPoint) -> Result<(), String> {
+        // Serialize the message
+        let serialized_message = serialize_message_to_bytes(self)
+            .map_err(|e| format!("Failed to serialize message: {}", e))?;
+
+        // Perform hybrid encryption
+        let hybrid_ciphertext = HybridCiphertext::encrypt(&serialized_message, elgamal_public_key)?;
+
+        // Update the payload with the encrypted message
+        self.payload = hybrid_ciphertext.serialize();
+        self.version += 1;
+
+        Ok(())
+    }
 
     /// Decrypts the payload using hybrid decryption, sets version back to 0
-    pub fn decrypt(&mut self, elgamal_private_key: &Scalar) -> Result<(), String> {}
+    pub fn decrypt(&mut self, elgamal_private_key: &Scalar) -> Result<(), String> {
+        // Deserialize the payload into a HybridCiphertext
+        let hybrid_ciphertext = HybridCiphertext::deserialize(&self.payload)
+            .map_err(|e| format!("Failed to deserialize payload: {}", e))?;
+
+        // Decrypt the message
+        let decrypted_message = hybrid_ciphertext.decrypt(elgamal_private_key)?;
+
+        // Deserialize the decrypted message back into the Message struct
+        let original_message = deserialize_message_from_bytes(&decrypted_message)
+            .map_err(|e| format!("Failed to deserialize decrypted message: {}", e))?;
+
+        // Update self with the original message's data
+        self.version = original_message.version;
+        self.payload = original_message.payload;
+        self.sender = original_message.sender;
+        self.recipient = original_message.recipient;
+        self.signature = original_message.signature;
+
+        Ok(())
+    }
 
     /// signs the payload using Schnorr signatures, sets the signing public key as sender
-    pub fn sign(&mut self, signing_key: &Scalar) {}
+    pub fn sign(&mut self, signing_key: &Scalar) {
+        let signature = SchnorrSignature::sign(&self.payload, signing_key);
+        self.signature = signature;
 
-    pub fn verify(&self) -> bool {}
+        // Set the sender as the public key corresponding to the signing key
+        let signing_public_key = signing_key * RISTRETTO_BASEPOINT_POINT;
+        self.sender = signing_public_key.compress().to_bytes();
+    }
+
+    /// Displays the message in a human-readable format
+    pub fn display(&self) {
+        println!("Message Version: {}", self.version);
+        println!("Payload: {:?}", String::from_utf8_lossy(&self.payload));
+        println!("Recipient: {:?}", base64::encode(&self.recipient));
+        println!("Sender: {:?}", base64::encode(&self.sender));
+        println!("Signature: R = {:?}, s = {:?}", 
+            base64::encode(self.signature.R.compress().as_bytes()), 
+            base64::encode(self.signature.s.to_bytes()));
+    }
 }
 
 #[cfg(test)]

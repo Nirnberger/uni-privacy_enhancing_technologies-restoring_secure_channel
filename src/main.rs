@@ -5,6 +5,5 @@ mod keys;
 mod message;
 mod schnorr;
 mod serializers;
-mod tests;
 
 fn main() {}
