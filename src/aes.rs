@@ -3,6 +3,8 @@ extern crate curve25519_dalek;
 extern crate rand;
 
 use aead::generic_array::GenericArray;
+use aead::Key;
+use aead::rand_core::RngCore;
 use aes_gcm::aead::{Aead, KeyInit}; // Use KeyInit for the `new` method
 use aes_gcm::{Aes256Gcm, Nonce}; // AES-GCM with 256-bit key
 use curve25519_dalek::scalar::Scalar;
@@ -36,10 +38,33 @@ impl AESCiphertext {
     }
 
     /// Encrypts a plaintext message using AES-256-GCM with a Scalar as the AES key
-    pub fn encrypt(scalar_key: &Scalar, message: &[u8]) -> Result<AESCiphertext, String> {}
+    pub fn encrypt(scalar_key: &Scalar, message: &[u8]) -> Result<AESCiphertext, String> {
+        let key_bytes = scalar_key.as_bytes();
+        let aes_key = Key::<Aes256Gcm>::from_slice(key_bytes);
+        let cipher = Aes256Gcm::new(aes_key);
+
+        let mut nonce = [0u8; AES_NONCE_SIZE];
+        OsRng.fill_bytes(&mut nonce);
+
+        let aes_nonce = Nonce::from_slice(&nonce);
+        let ciphertext = cipher
+            .encrypt(aes_nonce, message)
+            .map_err(|e| format!("Encryption failed: {:?}", e))?;
+
+        Ok(AESCiphertext { nonce, ciphertext })
+
+    }
 
     /// Decrypts a ciphertext using AES-256-GCM with a Scalar as the AES key
     pub fn decrypt(scalar_key: &Scalar, aes_ciphertext: &AESCiphertext) -> Result<Vec<u8>, String> {
+        let key_bytes = scalar_key.as_bytes();
+        let aes_key = Key::<Aes256Gcm>::from_slice(key_bytes);
+        let cipher = Aes256Gcm::new(aes_key);
+
+        let aes_nonce = Nonce::from_slice(&aes_ciphertext.nonce);
+        cipher
+            .decrypt(aes_nonce, aes_ciphertext.ciphertext.as_ref())
+            .map_err(|e| format!("Decryption failed: {:?}", e))
     }
 }
 
