@@ -6,6 +6,7 @@ use rand::rngs::OsRng;
 use std::fs::File;
 use std::io::Write;
 use std::io::{self, Read};
+use curve25519_dalek::traits::VartimeMultiscalarMul;
 
 /// Struct to hold public and private key pair
 #[derive(Debug)]
@@ -16,7 +17,16 @@ pub struct KeyPair {
 
 impl KeyPair {
     /// Generate a Schnorr signature key pair
-    pub fn generate() -> KeyPair {}
+    pub fn generate() -> KeyPair {
+        let mut rng = OsRng;;
+        let mut sk = Scalar::random(&mut rng);
+        let pk = RISTRETTO_BASEPOINT_POINT * sk;
+
+        KeyPair {
+            private_key: sk,
+            public_key: pk,
+        }
+    }
 }
 
 // Unit tests for keys module
