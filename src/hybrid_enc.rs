@@ -1,4 +1,10 @@
-use crate::aes::{encrypt_message, AESCiphertext, AES_NONCE_SIZE};
+use aead::{Aead, Key, KeyInit, Nonce, OsRng};
+use aead::generic_array::GenericArray;
+use aead::generic_array::sequence::GenericSequence;
+use aead::rand_core::RngCore;
+use aes_gcm::Aes256Gcm;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use crate::aes::{AESCiphertext, AES_NONCE_SIZE};
 use crate::elgamal::ElGamalCiphertext;
 use crate::keys::KeyPair;
 use curve25519_dalek::ristretto::CompressedRistretto;
@@ -19,10 +25,41 @@ impl HybridCiphertext {
         message: &[u8],
         public_key: &RistrettoPoint,
     ) -> Result<HybridCiphertext, String> {
+
+        let mut key_bytes = [0u8; 32]; // AES-256 benötigt 32 Bytes
+        OsRng.fill_bytes(&mut key_bytes);
+        let aes_key = AESCiphertext::keygen();
+
+
+        let aes_ciphertext = AESCiphertext::encrypt(&aes_key, message)?;
+
+        let elgamal_ciphertext = ElGamalCiphertext::encrypt(&aes_key, public_key);
+
+        Ok(HybridCiphertext {
+            elgamal_ciphertext,
+            aes_ciphertext,
+        })
     }
 
     /// Hybrid decryption: Decrypts the AES key using the ElGamal private key, then decrypts the AES ciphertext
-    pub fn decrypt(&self, private_key: &Scalar) -> Result<Vec<u8>, String> {}
+    pub fn decrypt(&self, private_key: &Scalar) -> Result<Vec<u8>, String> {
+
+        let aes_key_scalar = self.elgamal_ciphertext.decrypt(private_key);
+
+
+        let aes_key_bytes = aes_key_scalar.to_bytes(); // 32 Bytes
+        let aes_key = GenericArray::from_slice(&aes_key_bytes); // AES-256 benötigt 32 Bytes
+
+
+        let aes_cipher = Aes256Gcm::new(aes_key);
+
+        let nonce = GenericArray::from_slice(&self.aes_ciphertext.nonce);
+        let decrypted_message = aes_cipher
+            .decrypt(nonce, self.aes_ciphertext.ciphertext.as_ref())
+            .map_err(|_| "AES decryption failed".to_string())?;
+
+        Ok(decrypted_message)
+    }
 
     /// Serializes the HybridCiphertext into a Vec<u8>
     pub fn serialize(&self) -> Vec<u8> {
